@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.models import (
     Base,
@@ -159,7 +160,11 @@ def test_alembic_migration_file():
 @pytest.fixture
 def sqlite_session():
     """Create an in-memory SQLite session for testing non-spatial model logic and seeding."""
-    engine = create_engine("sqlite:///:memory:")
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     Role.__table__.create(engine)
     Session = sessionmaker(bind=engine)
     session = Session()
@@ -168,7 +173,7 @@ def sqlite_session():
 
 
 def test_role_seeding_and_uniqueness(sqlite_session):
-    """Verify idempotent role seeding and unique constraints."""
+    """Verify idempotent role seeding and unique constraints for exact specification roles."""
     created_first = seed_roles(sqlite_session)
     assert created_first == len(SYSTEM_ROLES)
 
@@ -179,9 +184,11 @@ def test_role_seeding_and_uniqueness(sqlite_session):
     roles = sqlite_session.query(Role).all()
     assert len(roles) == len(SYSTEM_ROLES)
     role_names = {r.name for r in roles}
-    assert "SUPER_ADMIN" in role_names
+    assert "ADMIN" in role_names
     assert "DOCTOR" in role_names
-    assert "ASHA_WORKER" in role_names
+    assert "ASHA" in role_names
+    assert "CHO" in role_names
+    assert "ANM" in role_names
 
 
 def test_model_instantiation():
