@@ -1,35 +1,61 @@
-# Backend Dockerfile for FastAPI Service
-FROM python:3.11-slim
+# =========================================================================
+# Production Dockerfile for RAHAT FastAPI Backend
+# Multi-stage build with non-root security and spatial libraries
+# =========================================================================
+
+# 1. Base Python Runtime
+FROM python:3.11-slim AS runtime
 
 WORKDIR /app
 
-# Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app
 
-# Install system dependencies (including curl for health checks and spatial libraries)
+# Install runtime system libraries (including curl for health checks and PostGIS/Spatial C-extensions)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    libpq5 \
+    libgeos-c1v5 \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. Builder Stage for Python Dependencies
+FROM runtime AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
     libgeos-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install python dependencies
 COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir --prefix=/install -r requirements.txt
 
-# Copy backend application source
+# 3. Final Production Runner Image
+FROM runtime AS runner
+
+# Security: Create non-root system user
+RUN groupadd -g 1000 rahat && \
+    useradd -u 1000 -g rahat -m -s /bin/sh rahat
+
+# Copy installed Python packages from builder
+COPY --from=builder /install /usr/local
+
+# Copy backend application source and migration configuration
 COPY backend/ ./
+COPY docker/entrypoint.sh ./entrypoint.sh
 
-# Expose port
+# Set correct permissions
+RUN chmod +x ./entrypoint.sh && \
+    chown -R rahat:rahat /app
+
+USER rahat
+
 EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+# Container Health Check (verifies FastAPI /health endpoint)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Run uvicorn
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["/app/entrypoint.sh"]

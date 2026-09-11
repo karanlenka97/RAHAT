@@ -1,11 +1,20 @@
+# Git
 **/.git
 **/.gitignore
+
+# Secrets
 **/.env
 **/.env.*
+!**/.env.example
+
+# Frontend artifacts
 **/node_modules
 **/.next
+**/out
 **/dist
 **/build
+
+# Python artifacts
 **/__pycache__
 **/*.pyc
 **/.pytest_cache
@@ -13,5 +22,7 @@
 **/htmlcov
 **/.venv
 **/venv
+
+# System artifacts
 .DS_Store
 Thumbs.db

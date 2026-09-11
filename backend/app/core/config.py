@@ -1,7 +1,10 @@
 """Application configuration and environment settings."""
+import logging
 from typing import List, Union
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -31,7 +34,7 @@ class Settings(BaseSettings):
     @classmethod
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
         if isinstance(v, str) and not v.startswith("["):
-            return [i.strip() for i in v.split(",")]
+            return [i.strip() for i in v.split(",") if i.strip()]
         elif isinstance(v, (list, str)):
             return v
         raise ValueError(v)
@@ -53,6 +56,27 @@ class Settings(BaseSettings):
     AI_API_KEY: str | None = None
     AI_TIMEOUT_SECONDS: int = 15
     AI_RATE_LIMIT_PER_MINUTE: int = 30
+
+    # Production Server Configuration
+    UVICORN_WORKERS: int = 2
+    RUN_DB_SEED: bool = False
+
+    @model_validator(mode="after")
+    def validate_production_security(self) -> "Settings":
+        """Enforce strict security validation when running in production mode."""
+        if self.ENVIRONMENT.lower() == "production":
+            if self.DEBUG:
+                logger.warning("Overriding DEBUG to False for production environment.")
+                object.__setattr__(self, "DEBUG", False)
+
+            insecure_secret = "rahat-dev-insecure-secret-key-change-in-production-2026"
+            if self.JWT_SECRET == insecure_secret or len(self.JWT_SECRET) < 32:
+                raise ValueError(
+                    "Production Security Error: A strong, unique JWT_SECRET of at least 32 characters "
+                    "must be configured via the JWT_SECRET environment variable."
+                )
+
+        return self
 
     model_config = SettingsConfigDict(
         env_file=".env",

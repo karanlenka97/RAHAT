@@ -1,5 +1,12 @@
+# =========================================================================
+# RAHAT (Rural Healthcare Access & Referral Assistance Technology)
+# Production-Style Local & Staging Container Orchestration
+# =========================================================================
+
 services:
-  # PostgreSQL with PostGIS Spatial Extension support
+  # -----------------------------------------------------------------------
+  # 1. PostgreSQL + PostGIS Spatial Database
+  # -----------------------------------------------------------------------
   postgres:
     image: postgis/postgis:16-3.4
     container_name: rahat-postgres
@@ -16,11 +23,14 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 5s
     restart: unless-stopped
     networks:
       - rahat-network
 
-  # Redis In-Memory Cache and Broker
+  # -----------------------------------------------------------------------
+  # 2. Redis In-Memory Cache & Task Broker
+  # -----------------------------------------------------------------------
   redis:
     image: redis:7-alpine
     container_name: rahat-redis
@@ -33,11 +43,14 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 5s
     restart: unless-stopped
     networks:
       - rahat-network
 
-  # FastAPI Backend Service
+  # -----------------------------------------------------------------------
+  # 3. FastAPI Backend REST & Engine Service
+  # -----------------------------------------------------------------------
   backend:
     build:
       context: .
@@ -45,15 +58,27 @@ services:
     container_name: rahat-backend
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-development}
-      DEBUG: ${DEBUG:-True}
+      DEBUG: ${DEBUG:-true}
+      JWT_SECRET: ${JWT_SECRET:-rahat-dev-insecure-secret-key-change-in-production-2026}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
       POSTGRES_SERVER: postgres
       POSTGRES_PORT: 5432
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-rahat_db}
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-rahat_db}
-      REDIS_URL: redis://redis:6379/0
-      BACKEND_CORS_ORIGINS: '["http://localhost:3000","http://127.0.0.1:3000","http://localhost:8000"]'
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS:-["http://localhost:3000","http://127.0.0.1:3000"]}
+      AI_PROVIDER: ${AI_PROVIDER:-mock}
+      AI_MODEL: ${AI_MODEL:-gemini-1.5-flash}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_TIMEOUT_SECONDS: ${AI_TIMEOUT_SECONDS:-15}
+      AI_RATE_LIMIT_PER_MINUTE: ${AI_RATE_LIMIT_PER_MINUTE:-30}
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-2}
+      RUN_DB_SEED: ${RUN_DB_SEED:-false}
+      BACKEND_PORT: 8000
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     depends_on:
@@ -61,33 +86,56 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     restart: unless-stopped
     networks:
       - rahat-network
 
-  # Next.js Frontend Application
+  # -----------------------------------------------------------------------
+  # 4. Next.js Frontend Application
+  # -----------------------------------------------------------------------
   frontend:
     build:
       context: .
       dockerfile: docker/Dockerfile.frontend
     container_name: rahat-frontend
     environment:
+      NODE_ENV: production
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-RAHAT}
       PORT: 3000
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
     networks:
       - rahat-network
 
+# -------------------------------------------------------------------------
+# Persistent Named Volumes (Survives container restarts)
+# -------------------------------------------------------------------------
 volumes:
   postgres_data:
     driver: local
   redis_data:
     driver: local
 
+# -------------------------------------------------------------------------
+# Internal Bridge Network
+# -------------------------------------------------------------------------
 networks:
   rahat-network:
     driver: bridge

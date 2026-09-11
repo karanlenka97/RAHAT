@@ -1,0 +1,39 @@
+# Git
+.git
+.gitignore
+
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+
+# Node.js & Next.js build artifacts
+**/node_modules
+**/.next
+**/out
+**/dist
+**/build
+
+# Python artifacts
+**/__pycache__
+**/*.py[cod]
+*$py.class
+**/.pytest_cache
+**/.coverage
+**/htmlcov
+**/.venv
+**/venv
+**/env
+
+# IDE & Editor files
+.vscode
+.idea
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Documentation / Scratch
+scratch/
+brain/
+svgwalkthrough.md
