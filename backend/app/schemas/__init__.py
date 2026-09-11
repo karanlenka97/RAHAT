@@ -7,6 +7,13 @@ from app.schemas.auth import (
     RefreshTokenRequest,
     LogoutResponse,
 )
+from app.schemas.patient import (
+    VillageSummary,
+    PatientCreate,
+    PatientUpdate,
+    PatientResponse,
+    PatientListResponse,
+)
 
 __all__ = [
     "HealthCheckResponse",
@@ -15,4 +22,9 @@ __all__ = [
     "TokenResponse",
     "RefreshTokenRequest",
     "LogoutResponse",
+    "VillageSummary",
+    "PatientCreate",
+    "PatientUpdate",
+    "PatientResponse",
+    "PatientListResponse",
 ]

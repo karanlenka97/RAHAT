@@ -127,8 +127,37 @@ function DashboardContent() {
               )}
             </div>
             <p className="text-xs text-slate-500">
-              Future protected modules (Patient intake, referral dispatch, bed allocation) will enforce these RBAC scopes.
+              Future clinical workflows will enforce these RBAC scopes.
             </p>
+          </div>
+        </div>
+
+        {/* Available Modules */}
+        <div className="mt-8">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-4">
+            Active Core Modules
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <Link
+              href="/patients"
+              className="group p-6 rounded-xl bg-gradient-to-br from-slate-900 to-emerald-950/20 border border-slate-800 hover:border-emerald-500/40 transition shadow-lg hover:shadow-emerald-950/30 flex flex-col justify-between"
+            >
+              <div>
+                <div className="h-10 w-10 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-bold mb-4 group-hover:scale-105 transition">
+                  👥
+                </div>
+                <h3 className="text-base font-bold text-white group-hover:text-emerald-400 transition">
+                  Patient Registry & Intake
+                </h3>
+                <p className="mt-1 text-xs text-slate-400">
+                  Search, register, and update rural citizen health records with village association and unique patient codes.
+                </p>
+              </div>
+              <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-emerald-400 font-medium">
+                <span>Access Module</span>
+                <span>&rarr;</span>
+              </div>
+            </Link>
           </div>
         </div>
       </main>
