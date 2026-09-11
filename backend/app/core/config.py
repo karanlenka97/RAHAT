@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     # Redis Configuration
     REDIS_URL: str = "redis://localhost:6379/0"
 
+    # AI Referral Assistant Configuration
+    AI_PROVIDER: str = "mock"  # "mock", "gemini", "openai"
+    AI_MODEL: str = "gemini-1.5-flash"
+    AI_API_KEY: str | None = None
+    AI_TIMEOUT_SECONDS: int = 15
+    AI_RATE_LIMIT_PER_MINUTE: int = 30
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

@@ -8,12 +8,10 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { getCareRequest, updateCareRequest } from "@/lib/careRequestApi";
 import { getRecommendations } from "@/lib/recommendationApi";
 import { createReferral } from "@/lib/referralApi";
-import {
-  CareRequest,
-  CareCategory,
-  CareRequestUpdateInput,
-} from "@/types/careRequest";
+import { CareRequest, CareCategory, CareRequestUpdateInput } from "@/types/careRequest";
 import { FacilityRecommendationItem } from "@/types/recommendation";
+import { AIReferralAssistantPanel } from "@/components/AIReferralAssistantPanel";
+import { AIRecommendationExplainer } from "@/components/AIRecommendationExplainer";
 import { ApiError } from "@/lib/api";
 
 const ALLOWED_EDIT_ROLES = [
@@ -683,6 +681,17 @@ function CareRequestDetailContent({ careRequestId }: { careRequestId: string }) 
               </div>
             </div>
 
+            {/* Phase 11: AI Referral Assistant Panel */}
+            <AIReferralAssistantPanel
+              careRequestId={careRequestId}
+              token={token}
+              existingNotes={careRequest.notes}
+              onSummaryApplied={(newNotes) => {
+                setCareRequest((prev) => (prev ? { ...prev, notes: newNotes } : null));
+                setReloadKey((k) => k + 1);
+              }}
+            />
+
             {/* Phase 7: Smart Facility Recommendation Engine */}
             <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
               {/* Header */}
@@ -930,6 +939,13 @@ function CareRequestDetailContent({ careRequestId }: { careRequestId: string }) 
                             {rec.explanation}
                           </div>
                         </div>
+
+                        {/* Phase 11: AI Recommendation Explainer */}
+                        <AIRecommendationExplainer
+                          careRequestId={careRequestId}
+                          recommendation={rec}
+                          token={token}
+                        />
 
                         {/* Matched Capabilities & Diagnostics Chips */}
                         <div className="mt-3.5 flex flex-wrap gap-2 text-xs">

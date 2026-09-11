@@ -10,6 +10,7 @@ from app.api.v1.endpoints import (
     recommendations,
     referrals,
     dashboard,
+    ai,
 )
 
 api_router = APIRouter()
@@ -22,3 +23,5 @@ api_router.include_router(facilities.router, prefix="/facilities", tags=["Facili
 api_router.include_router(recommendations.router, prefix="/recommendations", tags=["Smart Recommendations"])
 api_router.include_router(referrals.router, prefix="/referrals", tags=["Referrals"])
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboards"])
+api_router.include_router(ai.router, prefix="/ai", tags=["AI Referral Assistant"])
+

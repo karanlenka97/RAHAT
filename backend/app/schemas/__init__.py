@@ -79,6 +79,16 @@ from app.schemas.dashboard import (
     CareCompletionByGroup,
     CareCompletionResponse,
 )
+from app.schemas.ai import (
+    ReferralAISummaryRequest,
+    ReferralAISummaryResponse,
+    AIStructuredExtractionRequest,
+    AIStructuredExtractionResponse,
+    AIRecommendationExplanationRequest,
+    AIRecommendationExplanationResponse,
+    ApplyAISummaryRequest,
+    ApplyAISummaryResponse,
+)
 
 __all__ = [
     "HealthCheckResponse",
@@ -146,4 +156,12 @@ __all__ = [
     "ReferralFunnelResponse",
     "CareCompletionByGroup",
     "CareCompletionResponse",
+    "ReferralAISummaryRequest",
+    "ReferralAISummaryResponse",
+    "AIStructuredExtractionRequest",
+    "AIStructuredExtractionResponse",
+    "AIRecommendationExplanationRequest",
+    "AIRecommendationExplanationResponse",
+    "ApplyAISummaryRequest",
+    "ApplyAISummaryResponse",
 ]
