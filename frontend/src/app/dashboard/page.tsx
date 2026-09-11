@@ -158,6 +158,27 @@ function DashboardContent() {
                 <span>&rarr;</span>
               </div>
             </Link>
+
+            <Link
+              href="/care-requests"
+              className="group p-6 rounded-xl bg-gradient-to-br from-slate-900 to-teal-950/20 border border-slate-800 hover:border-teal-500/40 transition shadow-lg hover:shadow-teal-950/30 flex flex-col justify-between"
+            >
+              <div>
+                <div className="h-10 w-10 rounded-lg bg-teal-500/10 border border-teal-500/30 flex items-center justify-center text-teal-400 font-bold mb-4 group-hover:scale-105 transition">
+                  🩺
+                </div>
+                <h3 className="text-base font-bold text-white group-hover:text-teal-400 transition">
+                  Care Requests & Triage
+                </h3>
+                <p className="mt-1 text-xs text-slate-400">
+                  Log clinical requirements, assess triage urgency, and record specialist and diagnostic needs for registered patients.
+                </p>
+              </div>
+              <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-teal-400 font-medium">
+                <span>Access Module</span>
+                <span>&rarr;</span>
+              </div>
+            </Link>
           </div>
         </div>
       </main>

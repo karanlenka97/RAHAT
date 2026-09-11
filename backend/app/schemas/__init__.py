@@ -14,6 +14,17 @@ from app.schemas.patient import (
     PatientResponse,
     PatientListResponse,
 )
+from app.schemas.care_request import (
+    CareCategory,
+    UrgencyLevel,
+    CareRequestStatus,
+    PatientCareRequestSummary,
+    CreatorSummary,
+    CareRequestCreate,
+    CareRequestUpdate,
+    CareRequestResponse,
+    CareRequestListResponse,
+)
 
 __all__ = [
     "HealthCheckResponse",
@@ -27,4 +38,13 @@ __all__ = [
     "PatientUpdate",
     "PatientResponse",
     "PatientListResponse",
+    "CareCategory",
+    "UrgencyLevel",
+    "CareRequestStatus",
+    "PatientCareRequestSummary",
+    "CreatorSummary",
+    "CareRequestCreate",
+    "CareRequestUpdate",
+    "CareRequestResponse",
+    "CareRequestListResponse",
 ]

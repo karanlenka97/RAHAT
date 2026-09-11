@@ -6,6 +6,7 @@ from app.models.role import Role
 from app.models.user import User
 from app.models.village import Village
 from app.models.patient import Patient
+from app.models.care_request import CareRequest
 from app.core.security import get_password_hash
 
 logger = logging.getLogger(__name__)
@@ -240,6 +241,82 @@ SAMPLE_PATIENTS = [
 ]
 
 
+SAMPLE_CARE_REQUESTS = [
+    {
+        "request_number": "CR-RAHAT-000001",
+        "patient_code": "RAHAT-P-000001",
+        "creator_email": "asha@rahat.local",
+        "care_category": "GENERAL_MEDICINE",
+        "required_service": "General Medicine",
+        "urgency_level": "LOW",
+        "chief_complaint": "Persistent dry cough and mild evening fever for 4 days with throat irritation",
+        "diagnostic_requirements": ["CBC", "Chest X-Ray"],
+        "specialist_required": False,
+        "notes": "Patient reported no hemoptysis or breathing difficulty. Routine sub-center observation advised.",
+    },
+    {
+        "request_number": "CR-RAHAT-000002",
+        "patient_code": "RAHAT-P-000002",
+        "creator_email": "anm@rahat.local",
+        "care_category": "MATERNAL_HEALTH",
+        "required_service": "Obstetrics & Gynecology",
+        "urgency_level": "MEDIUM",
+        "chief_complaint": "Third-trimester pregnancy with borderline elevated fasting glucose readings",
+        "diagnostic_requirements": ["Fasting Blood Sugar", "Obstetric Ultrasound", "Urine Routine"],
+        "specialist_required": True,
+        "notes": "High-risk pregnancy protocol. Specialist obstetric consultation requested at CHC.",
+    },
+    {
+        "request_number": "CR-RAHAT-000003",
+        "patient_code": "RAHAT-P-000003",
+        "creator_email": "cho@rahat.local",
+        "care_category": "EMERGENCY",
+        "required_service": "Cardiology",
+        "urgency_level": "EMERGENCY",
+        "chief_complaint": "Acute crushing retrosternal chest pain radiating to left shoulder and arm with profuse diaphoresis",
+        "diagnostic_requirements": ["12-Lead ECG", "Troponin I", "CBC", "Echocardiogram"],
+        "specialist_required": True,
+        "notes": "Emergency triage initiated. Sublingual nitrate and aspirin given. Immediate emergency transfer recommended.",
+    },
+    {
+        "request_number": "CR-RAHAT-000004",
+        "patient_code": "RAHAT-P-000004",
+        "creator_email": "doctor@rahat.local",
+        "care_category": "NCD",
+        "required_service": "Endocrinology",
+        "urgency_level": "LOW",
+        "chief_complaint": "Quarterly chronic disease review and diabetic neuropathy screening",
+        "diagnostic_requirements": ["HbA1c", "Lipid Profile", "Serum Creatinine"],
+        "specialist_required": False,
+        "notes": "Medication compliance satisfactory. Continued dietary guidance provided.",
+    },
+    {
+        "request_number": "CR-RAHAT-000005",
+        "patient_code": "RAHAT-P-000005",
+        "creator_email": "asha@rahat.local",
+        "care_category": "CHILD_HEALTH",
+        "required_service": "Pediatrics",
+        "urgency_level": "MEDIUM",
+        "chief_complaint": "Recurrent wheezing exacerbations triggered by seasonal temperature changes",
+        "diagnostic_requirements": ["Chest X-Ray", "Spirometry"],
+        "specialist_required": True,
+        "notes": "Assess pediatric meter-dose inhaler spacer technique with guardian.",
+    },
+    {
+        "request_number": "CR-RAHAT-000006",
+        "patient_code": "RAHAT-P-000006",
+        "creator_email": "anm@rahat.local",
+        "care_category": "EYE_CARE",
+        "required_service": "Ophthalmology",
+        "urgency_level": "LOW",
+        "chief_complaint": "Progressive painless diminution of distant vision with difficulty in nocturnal navigation",
+        "diagnostic_requirements": ["Visual Acuity Test", "Slit Lamp Examination", "Intraocular Pressure"],
+        "specialist_required": True,
+        "notes": "Suspected bilateral senile nuclear cataract. Scheduled for elective ophthalmic triage.",
+    },
+]
+
+
 def seed_roles(db: Session) -> int:
     """Seed the 8 exact RBAC system roles idempotently."""
     created_count = 0
@@ -346,16 +423,49 @@ def seed_synthetic_patients(db: Session) -> int:
     return created_count
 
 
+def seed_synthetic_care_requests(db: Session) -> int:
+    """Seed 6 synthetic demo care requests associated with sample patients."""
+    created_count = 0
+    for cr_data in SAMPLE_CARE_REQUESTS:
+        existing = db.query(CareRequest).filter(CareRequest.request_number == cr_data["request_number"]).first()
+        if not existing:
+            patient = db.query(Patient).filter(Patient.anonymous_patient_code == cr_data["patient_code"]).first()
+            user = db.query(User).filter(User.email == cr_data["creator_email"]).first()
+            if not patient or not user:
+                continue
+
+            care_req = CareRequest(
+                request_number=cr_data["request_number"],
+                patient_id=patient.id,
+                village_id=patient.village_id,
+                created_by_user_id=user.id,
+                care_category=cr_data["care_category"],
+                required_service=cr_data["required_service"],
+                urgency_level=cr_data["urgency_level"],
+                chief_complaint=cr_data["chief_complaint"],
+                diagnostic_requirements=cr_data["diagnostic_requirements"],
+                specialist_required=cr_data["specialist_required"],
+                notes=cr_data["notes"],
+                status="SUBMITTED",
+            )
+            db.add(care_req)
+            created_count += 1
+    db.commit()
+    return created_count
+
+
 def run_seeds(db: Session) -> dict:
-    """Master seeding entry point for roles, users, villages, and demo patients."""
+    """Master seeding entry point for roles, users, villages, demo patients, and care requests."""
     roles_seeded = seed_roles(db)
     users_seeded = seed_dev_users(db)
     villages_seeded = seed_villages(db)
     patients_seeded = seed_synthetic_patients(db)
+    care_requests_seeded = seed_synthetic_care_requests(db)
 
     logger.info(
         f"Seeding completed. Roles: {roles_seeded}, Users: {users_seeded}, "
-        f"Villages: {villages_seeded}, Patients: {patients_seeded}"
+        f"Villages: {villages_seeded}, Patients: {patients_seeded}, "
+        f"Care Requests: {care_requests_seeded}"
     )
     return {
         "status": "success",
@@ -363,4 +473,6 @@ def run_seeds(db: Session) -> dict:
         "users_seeded": users_seeded,
         "villages_seeded": villages_seeded,
         "patients_seeded": patients_seeded,
+        "care_requests_seeded": care_requests_seeded,
     }
+

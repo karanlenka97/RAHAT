@@ -6,7 +6,9 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { getPatient, updatePatient, getVillages } from "@/lib/patientApi";
+import { getCareRequests } from "@/lib/careRequestApi";
 import { Patient, Village, PatientUpdateInput } from "@/types/patient";
+import { CareRequest } from "@/types/careRequest";
 import { ApiError } from "@/lib/api";
 
 const ALLOWED_EDIT_ROLES = ["ADMIN", "DISTRICT_ADMIN", "FACILITY_ADMIN", "DOCTOR", "MEDICAL_OFFICER", "CHO", "ANM", "ASHA"];
@@ -21,6 +23,7 @@ function PatientProfileContent({ patientId }: { patientId: string }) {
 
   const [patient, setPatient] = useState<Patient | null>(null);
   const [villages, setVillages] = useState<Village[]>([]);
+  const [careRequests, setCareRequests] = useState<CareRequest[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,6 +85,21 @@ function PatientProfileContent({ patientId }: { patientId: string }) {
       isMounted = false;
     };
   }, [token]);
+
+  // Load Associated Care Requests
+  useEffect(() => {
+    let isMounted = true;
+    if (!token || !patientId) return;
+    getCareRequests({ patient_id: patientId }, token)
+      .then((data) => {
+        if (isMounted) setCareRequests(data.items);
+      })
+      .catch((err) => console.error("Failed to load patient care requests:", err));
+
+    return () => {
+      isMounted = false;
+    };
+  }, [patientId, token, reloadKey]);
 
   const handleLogout = async () => {
     await logout();
@@ -420,10 +438,86 @@ function PatientProfileContent({ patientId }: { patientId: string }) {
               </div>
             </div>
 
-            {/* Future Modules Placeholder */}
+            {/* Associated Care Requests Section */}
+            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-6">
+              <div className="flex items-center justify-between pb-4 border-b border-slate-800 mb-4">
+                <div>
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                    Associated Care Requests ({careRequests.length})
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Clinical intake and triage requirements logged for this patient.
+                  </p>
+                </div>
+                <Link
+                  href="/care-requests"
+                  className="px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-medium transition"
+                >
+                  + New Care Request
+                </Link>
+              </div>
+
+              {careRequests.length === 0 ? (
+                <p className="text-xs text-slate-500 italic py-4 text-center">
+                  No care requests currently logged for this patient.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-950 text-slate-400 border-b border-slate-800 uppercase tracking-wider">
+                      <tr>
+                        <th className="px-4 py-2.5">Request Code</th>
+                        <th className="px-4 py-2.5">Care Category</th>
+                        <th className="px-4 py-2.5">Required Service</th>
+                        <th className="px-4 py-2.5">Urgency</th>
+                        <th className="px-4 py-2.5">Specialist</th>
+                        <th className="px-4 py-2.5">Logged Date</th>
+                        <th className="px-4 py-2.5 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60">
+                      {careRequests.map((cr) => (
+                        <tr key={cr.id} className="hover:bg-slate-800/30 transition">
+                          <td className="px-4 py-3 font-mono font-bold text-emerald-400">
+                            {cr.request_number}
+                          </td>
+                          <td className="px-4 py-3 text-slate-200">
+                            {cr.care_category.replace(/_/g, " ")}
+                          </td>
+                          <td className="px-4 py-3 text-slate-300 font-medium">
+                            {cr.required_service}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="px-2 py-0.5 rounded font-mono font-bold text-[10px] bg-slate-800 text-slate-300 border border-slate-700">
+                              {cr.urgency}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-slate-400">
+                            {cr.specialist_required ? "👨‍⚕️ Required" : "General"}
+                          </td>
+                          <td className="px-4 py-3 text-slate-400 font-mono">
+                            {new Date(cr.created_at).toLocaleDateString("en-IN")}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <Link
+                              href={`/care-requests/${cr.id}`}
+                              className="text-emerald-400 hover:underline font-medium"
+                            >
+                              View &rarr;
+                            </Link>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Future Referral & Recommendation Modules Placeholder */}
             <div className="bg-slate-900/30 border border-dashed border-slate-800 rounded-xl p-8 text-center">
               <div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">
-                Clinical Care Journey
+                Facility Match & Referral Journey
               </div>
               <p className="text-xs text-slate-500 italic max-w-md mx-auto">
                 Care journey modules will appear here in later phases.
