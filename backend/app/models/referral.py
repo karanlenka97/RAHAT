@@ -26,7 +26,6 @@ class Referral(Base, TimestampMixin):
     care_request_id = Column(
         GUID,
         ForeignKey("care_requests.id", ondelete="CASCADE"),
-        unique=True,
         nullable=False,
         index=True,
     )
@@ -38,8 +37,8 @@ class Referral(Base, TimestampMixin):
     )
     origin_facility_id = Column(
         GUID,
-        ForeignKey("facilities.id", ondelete="RESTRICT"),
-        nullable=False,
+        ForeignKey("facilities.id", ondelete="SET NULL"),
+        nullable=True,
         index=True,
     )
     destination_facility_id = Column(
@@ -54,17 +53,29 @@ class Referral(Base, TimestampMixin):
         nullable=True,
         index=True,
     )
+    parent_referral_id = Column(
+        GUID,
+        ForeignKey("referrals.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
-    priority = Column(String(30), default="MEDIUM", nullable=False, index=True)  # CRITICAL_RED, URGENT_YELLOW, STABLE_GREEN
+    priority = Column(String(30), default="MEDIUM", nullable=False, index=True)  # EMERGENCY, HIGH, MEDIUM, LOW
     required_specialty = Column(String(100), nullable=True, index=True)
     required_capability = Column(String(100), nullable=True)
     clinical_summary = Column(Text, nullable=False)
 
-    transport_mode = Column(String(50), nullable=True)  # 108_AMBULANCE, 102_AMBULANCE, PRIVATE_VEHICLE
+    transport_mode = Column(String(50), nullable=True)  # 108_AMBULANCE, 102_AMBULANCE, PRIVATE_VEHICLE, PUBLIC_TRANSPORT, OTHER
     transport_status = Column(String(50), default="PENDING", nullable=False)
-    status = Column(String(50), default="INITIATED", nullable=False, index=True)  # INITIATED, TRANSMITTED, ACCEPTED, REJECTED, IN_TRANSIT, ADMITTED, DISCHARGED
+    status = Column(String(50), default="PENDING_ACCEPTANCE", nullable=False, index=True)
+    # Lifecycle: CREATED, PENDING_ACCEPTANCE, ACCEPTED, REJECTED, PATIENT_NOTIFIED, DEPARTED, ARRIVED, IN_SERVICE, COMPLETED, BACK_REFERRED, FOLLOW_UP, CLOSED, REROUTED, CANCELLED
+
     estimated_transit_minutes = Column(Integer, nullable=True)
-    rejection_reason = Column(Text, nullable=True)
+    expected_arrival_time = Column(DateTime(timezone=True), nullable=True)
+
+    rejection_reason = Column(String(100), nullable=True)  # SERVICE_UNAVAILABLE, CAPACITY_UNAVAILABLE, SPECIALIST_UNAVAILABLE, FACILITY_CLOSED, OTHER
+    rejection_notes = Column(Text, nullable=True)
+    back_referral_notes = Column(Text, nullable=True)
 
     initiated_at = Column(
         DateTime(timezone=True),
@@ -73,8 +84,13 @@ class Referral(Base, TimestampMixin):
         nullable=False,
     )
     accepted_at = Column(DateTime(timezone=True), nullable=True)
+    notified_at = Column(DateTime(timezone=True), nullable=True)
+    departed_at = Column(DateTime(timezone=True), nullable=True)
     arrived_at = Column(DateTime(timezone=True), nullable=True)
+    in_service_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
+    back_referred_at = Column(DateTime(timezone=True), nullable=True)
+    closed_at = Column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     care_request = relationship("CareRequest", back_populates="referral")
@@ -94,6 +110,12 @@ class Referral(Base, TimestampMixin):
         foreign_keys=[referred_by_user_id],
         back_populates="referrals_managed",
     )
+    parent_referral = relationship(
+        "Referral",
+        remote_side=[id],
+        backref="child_referrals",
+        foreign_keys=[parent_referral_id],
+    )
     events = relationship(
         "ReferralEvent",
         back_populates="referral",
@@ -106,9 +128,60 @@ class Referral(Base, TimestampMixin):
         cascade="all, delete-orphan",
     )
 
+    # Property Aliases for Specification Conformity
+    @property
+    def source_facility_id(self):
+        return self.origin_facility_id
+
+    @source_facility_id.setter
+    def source_facility_id(self, value):
+        self.origin_facility_id = value
+
+    @property
+    def receiving_facility_id(self):
+        return self.destination_facility_id
+
+    @receiving_facility_id.setter
+    def receiving_facility_id(self, value):
+        self.destination_facility_id = value
+
+    @property
+    def source_facility(self):
+        return self.origin_facility
+
+    @property
+    def receiving_facility(self):
+        return self.destination_facility
+
+    @property
+    def created_by(self):
+        return self.referred_by_user_id
+
+    @created_by.setter
+    def created_by(self, value):
+        self.referred_by_user_id = value
+
+    @property
+    def urgency(self):
+        return self.priority
+
+    @urgency.setter
+    def urgency(self, value):
+        self.priority = value
+
+    @property
+    def referral_reason(self):
+        return self.clinical_summary
+
+    @referral_reason.setter
+    def referral_reason(self, value):
+        self.clinical_summary = value
+
     __table_args__ = (
         Index("idx_referral_status_priority", "status", "priority"),
         Index("idx_referral_facilities", "origin_facility_id", "destination_facility_id"),
+        Index("idx_referral_care_request", "care_request_id"),
+        Index("idx_referral_parent", "parent_referral_id"),
     )
 
     def __repr__(self) -> str:
@@ -156,6 +229,39 @@ class ReferralEvent(Base):
     # Relationships
     referral = relationship("Referral", back_populates="events")
     triggered_by_user = relationship("User")
+
+    # Property Aliases
+    @property
+    def previous_status(self):
+        return self.from_status
+
+    @previous_status.setter
+    def previous_status(self, value):
+        self.from_status = value
+
+    @property
+    def new_status(self):
+        return self.to_status
+
+    @new_status.setter
+    def new_status(self, value):
+        self.to_status = value
+
+    @property
+    def performed_by(self):
+        return self.triggered_by_user_id
+
+    @performed_by.setter
+    def performed_by(self, value):
+        self.triggered_by_user_id = value
+
+    @property
+    def notes(self):
+        return self.comments
+
+    @notes.setter
+    def notes(self, value):
+        self.comments = value
 
     def __repr__(self) -> str:
         return f"<ReferralEvent type={self.event_type} to_status={self.to_status}>"

@@ -130,7 +130,7 @@ def test_unique_constraints_and_indexes():
     assert tables["patients"].columns["anonymous_patient_code"].unique is True
     assert tables["care_requests"].columns["request_number"].unique is True
     assert tables["referrals"].columns["referral_code"].unique is True
-    assert tables["referrals"].columns["care_request_id"].unique is True
+    assert tables["referrals"].columns["care_request_id"].index is True
 
 
 def test_alembic_migration_file():

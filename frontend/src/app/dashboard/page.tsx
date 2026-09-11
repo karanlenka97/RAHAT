@@ -200,6 +200,27 @@ function DashboardContent() {
                 <span>&rarr;</span>
               </div>
             </Link>
+
+            <Link
+              href="/referrals"
+              className="group p-6 rounded-xl bg-gradient-to-br from-slate-900 to-indigo-950/20 border border-slate-800 hover:border-indigo-500/40 transition shadow-lg hover:shadow-indigo-950/30 flex flex-col justify-between"
+            >
+              <div>
+                <div className="h-10 w-10 rounded-lg bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-bold mb-4 group-hover:scale-105 transition">
+                  🚑
+                </div>
+                <h3 className="text-base font-bold text-white group-hover:text-indigo-400 transition">
+                  Referral Lifecycle & Tracking
+                </h3>
+                <p className="mt-1 text-xs text-slate-400">
+                  Manage patient referral acceptance, patient notification, transit milestones, clinical service completion, and back-referrals.
+                </p>
+              </div>
+              <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-indigo-400 font-medium">
+                <span>Access Module</span>
+                <span>&rarr;</span>
+              </div>
+            </Link>
           </div>
         </div>
       </main>

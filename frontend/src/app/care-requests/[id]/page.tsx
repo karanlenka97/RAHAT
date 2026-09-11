@@ -7,6 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { getCareRequest, updateCareRequest } from "@/lib/careRequestApi";
 import { getRecommendations } from "@/lib/recommendationApi";
+import { createReferral } from "@/lib/referralApi";
 import {
   CareRequest,
   CareCategory,
@@ -145,8 +146,16 @@ function CareRequestDetailContent({ careRequestId }: { careRequestId: string }) 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [successBanner, setSuccessBanner] = useState<string | null>(null);
-
   const [formData, setFormData] = useState<CareRequestUpdateInput>({});
+
+  // Referral Creation Modal State
+  const [isReferOpen, setIsReferOpen] = useState<boolean>(false);
+  const [selectedFacility, setSelectedFacility] = useState<FacilityRecommendationItem | null>(null);
+  const [referUrgency, setReferUrgency] = useState<string>("MEDIUM");
+  const [referTransport, setReferTransport] = useState<string>("108_AMBULANCE");
+  const [referNotes, setReferNotes] = useState<string>("");
+  const [referralSubmitting, setReferralSubmitting] = useState<boolean>(false);
+  const [referralError, setReferralError] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -222,6 +231,47 @@ function CareRequestDetailContent({ careRequestId }: { careRequestId: string }) 
   const handleLogout = async () => {
     await logout();
     router.push("/login");
+  };
+
+  const openReferModal = (rec: FacilityRecommendationItem) => {
+    setSelectedFacility(rec);
+    setReferUrgency(careRequest?.urgency || "MEDIUM");
+    setReferTransport("108_AMBULANCE");
+    setReferNotes(careRequest?.symptoms_summary || "");
+    setReferralError(null);
+    setIsReferOpen(true);
+  };
+
+  const handleCreateReferralSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token || !careRequest || !selectedFacility) return;
+    setReferralSubmitting(true);
+    setReferralError(null);
+    try {
+      const created = await createReferral(
+        {
+          care_request_id: careRequest.id,
+          receiving_facility_id: selectedFacility.facility_id,
+          urgency: referUrgency,
+          transport_mode: referTransport,
+          referral_reason: referNotes.trim() || undefined,
+          clinical_summary: careRequest.notes ? `${careRequest.symptoms_summary}\n\nNotes: ${careRequest.notes}` : careRequest.symptoms_summary,
+        },
+        token
+      );
+      setIsReferOpen(false);
+      router.push(`/referrals/${created.id}`);
+    } catch (err: unknown) {
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+          ? err.message
+          : "Failed to initiate referral.";
+      setReferralError(msg);
+    } finally {
+      setReferralSubmitting(false);
+    }
   };
 
   const openEditModal = () => {
@@ -993,16 +1043,23 @@ function CareRequestDetailContent({ careRequestId }: { careRequestId: string }) 
                         </div>
 
                         {/* Card Footer Action */}
-                        <div className="mt-4 pt-3 border-t border-slate-900 flex justify-end">
+                        <div className="mt-4 pt-3 border-t border-slate-900 flex flex-wrap items-center justify-between gap-3">
                           <Link
                             href={`/facilities/${rec.facility_id}`}
-                            className="inline-flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 font-medium transition"
+                            className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 font-medium transition"
                           >
-                            <span>View Full Facility Details & Capabilities</span>
+                            <span>View Facility Details</span>
                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                             </svg>
                           </Link>
+
+                          <button
+                            onClick={() => openReferModal(rec)}
+                            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md shadow-emerald-950/30 transition inline-flex items-center gap-2"
+                          >
+                            <span>➔ Refer to this Facility</span>
+                          </button>
                         </div>
                       </div>
                     );
@@ -1013,6 +1070,117 @@ function CareRequestDetailContent({ careRequestId }: { careRequestId: string }) 
           </div>
         )}
       </main>
+
+      {/* Referral Creation Modal */}
+      {isReferOpen && selectedFacility && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full p-6 sm:p-8 shadow-2xl my-8 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div>
+                <h3 className="text-base font-bold text-white">Create Patient Referral</h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Confirm facility destination and dispatch requirements for {careRequest?.patient?.full_name}.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsReferOpen(false)}
+                className="text-slate-400 hover:text-white text-lg p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {referralError && (
+              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-400">
+                {referralError}
+              </div>
+            )}
+
+            <form onSubmit={handleCreateReferralSubmit} className="space-y-4">
+              <div className="bg-slate-950/70 border border-slate-800 p-4 rounded-xl space-y-2 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Destination Facility:</span>
+                  <strong className="text-emerald-400">{selectedFacility.facility_name}</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Match Score:</span>
+                  <span className="text-slate-200 font-mono">{Math.round(selectedFacility.overall_score)}% Match</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Distance:</span>
+                  <span className="text-slate-200">
+                    {selectedFacility.distance_km != null ? `${selectedFacility.distance_km.toFixed(1)} km away` : "Distance N/A"}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1">
+                  Urgency Level *
+                </label>
+                <select
+                  value={referUrgency}
+                  onChange={(e) => setReferUrgency(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                >
+                  <option value="EMERGENCY">Emergency (Immediate)</option>
+                  <option value="HIGH">High Urgency (&lt; 24h)</option>
+                  <option value="MEDIUM">Medium Urgency</option>
+                  <option value="LOW">Low / Elective</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1">
+                  Transport Mode
+                </label>
+                <select
+                  value={referTransport}
+                  onChange={(e) => setReferTransport(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                >
+                  <option value="108_AMBULANCE">108 Emergency Ambulance</option>
+                  <option value="102_AMBULANCE">102 Maternal / Janani Ambulance</option>
+                  <option value="PRIVATE_VEHICLE">Private Vehicle / Auto</option>
+                  <option value="PUBLIC_TRANSPORT">Public Transport</option>
+                  <option value="WALKING">Accompanied Walking</option>
+                  <option value="OTHER">Other</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1">
+                  Clinical Referral Reason / Instructions
+                </label>
+                <textarea
+                  rows={3}
+                  value={referNotes}
+                  onChange={(e) => setReferNotes(e.target.value)}
+                  placeholder="Clinical reasons, provisional diagnosis, escort details..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsReferOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-medium hover:bg-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={referralSubmitting}
+                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-lg shadow-emerald-950/40 disabled:opacity-50 transition"
+                >
+                  {referralSubmitting ? "Creating Referral..." : "Confirm & Dispatch Referral"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Edit Modal */}
       {isEditOpen && (
