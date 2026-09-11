@@ -9,6 +9,7 @@ from app.api.v1.endpoints import (
     facilities,
     recommendations,
     referrals,
+    dashboard,
 )
 
 api_router = APIRouter()
@@ -20,3 +21,4 @@ api_router.include_router(care_requests.router, prefix="/care-requests", tags=["
 api_router.include_router(facilities.router, prefix="/facilities", tags=["Facilities"])
 api_router.include_router(recommendations.router, prefix="/recommendations", tags=["Smart Recommendations"])
 api_router.include_router(referrals.router, prefix="/referrals", tags=["Referrals"])
+api_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboards"])

@@ -63,6 +63,23 @@ from app.schemas.referral import (
     ReferralListResponse,
 )
 
+from app.schemas.dashboard import (
+    TimeRangeFilter,
+    FrontlineActionItem,
+    FrontlineRecentActivity,
+    FrontlineDashboardResponse,
+    FacilityCapabilityMetric,
+    FacilityReferralQueueItem,
+    FacilityStatusBreakdown,
+    FacilityDashboardResponse,
+    FacilityPerformanceSummary,
+    DistrictDashboardResponse,
+    FunnelStageItem,
+    ReferralFunnelResponse,
+    CareCompletionByGroup,
+    CareCompletionResponse,
+)
+
 __all__ = [
     "HealthCheckResponse",
     "LoginRequest",
@@ -115,4 +132,18 @@ __all__ = [
     "ReferralEventResponse",
     "ReferralResponse",
     "ReferralListResponse",
+    "TimeRangeFilter",
+    "FrontlineActionItem",
+    "FrontlineRecentActivity",
+    "FrontlineDashboardResponse",
+    "FacilityCapabilityMetric",
+    "FacilityReferralQueueItem",
+    "FacilityStatusBreakdown",
+    "FacilityDashboardResponse",
+    "FacilityPerformanceSummary",
+    "DistrictDashboardResponse",
+    "FunnelStageItem",
+    "ReferralFunnelResponse",
+    "CareCompletionByGroup",
+    "CareCompletionResponse",
 ]
