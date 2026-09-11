@@ -25,6 +25,20 @@ from app.schemas.care_request import (
     CareRequestResponse,
     CareRequestListResponse,
 )
+from app.schemas.facility import (
+    FacilityType,
+    ServiceCategory,
+    AvailabilityStatus,
+    FacilityCapabilityCreate,
+    FacilityCapabilityUpdate,
+    FacilityCapabilityResponse,
+    FacilityCreate,
+    FacilityUpdate,
+    FacilityResponse,
+    FacilityListResponse,
+    NearbyFacilityItem,
+    NearbyFacilitiesResponse,
+)
 
 __all__ = [
     "HealthCheckResponse",
@@ -47,4 +61,16 @@ __all__ = [
     "CareRequestUpdate",
     "CareRequestResponse",
     "CareRequestListResponse",
+    "FacilityType",
+    "ServiceCategory",
+    "AvailabilityStatus",
+    "FacilityCapabilityCreate",
+    "FacilityCapabilityUpdate",
+    "FacilityCapabilityResponse",
+    "FacilityCreate",
+    "FacilityUpdate",
+    "FacilityResponse",
+    "FacilityListResponse",
+    "NearbyFacilityItem",
+    "NearbyFacilitiesResponse",
 ]

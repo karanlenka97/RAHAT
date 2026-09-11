@@ -179,6 +179,27 @@ function DashboardContent() {
                 <span>&rarr;</span>
               </div>
             </Link>
+
+            <Link
+              href="/facilities"
+              className="group p-6 rounded-xl bg-gradient-to-br from-slate-900 to-cyan-950/20 border border-slate-800 hover:border-cyan-500/40 transition shadow-lg hover:shadow-cyan-950/30 flex flex-col justify-between"
+            >
+              <div>
+                <div className="h-10 w-10 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 font-bold mb-4 group-hover:scale-105 transition">
+                  🏥
+                </div>
+                <h3 className="text-base font-bold text-white group-hover:text-cyan-400 transition">
+                  Facilities & Capabilities
+                </h3>
+                <p className="mt-1 text-xs text-slate-400">
+                  Inspect health center tiers, bed availability, verified clinical capabilities, and locate nearby facilities via geospatial lookup.
+                </p>
+              </div>
+              <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-cyan-400 font-medium">
+                <span>Access Module</span>
+                <span>&rarr;</span>
+              </div>
+            </Link>
           </div>
         </div>
       </main>
