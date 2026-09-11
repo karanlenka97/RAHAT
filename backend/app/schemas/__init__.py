@@ -39,6 +39,11 @@ from app.schemas.facility import (
     NearbyFacilityItem,
     NearbyFacilitiesResponse,
 )
+from app.schemas.recommendation import (
+    FactorScores,
+    FacilityRecommendationItem,
+    RecommendationResponse,
+)
 
 __all__ = [
     "HealthCheckResponse",
@@ -73,4 +78,7 @@ __all__ = [
     "FacilityListResponse",
     "NearbyFacilityItem",
     "NearbyFacilitiesResponse",
+    "FactorScores",
+    "FacilityRecommendationItem",
+    "RecommendationResponse",
 ]

@@ -6,11 +6,13 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { getCareRequest, updateCareRequest } from "@/lib/careRequestApi";
+import { getRecommendations } from "@/lib/recommendationApi";
 import {
   CareRequest,
   CareCategory,
   CareRequestUpdateInput,
 } from "@/types/careRequest";
+import { FacilityRecommendationItem } from "@/types/recommendation";
 import { ApiError } from "@/lib/api";
 
 const ALLOWED_EDIT_ROLES = [
@@ -90,6 +92,38 @@ function UrgencyBadge({ urgency }: { urgency: string }) {
   }
 }
 
+function RecommendationRankBadge({ rank }: { rank: number }) {
+  if (rank === 1) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm shadow-emerald-500/10">
+        <svg className="w-3.5 h-3.5 fill-emerald-400 text-emerald-400" viewBox="0 0 20 20" fill="currentColor">
+          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+        </svg>
+        #1 Top Recommendation
+      </span>
+    );
+  }
+  if (rank === 2) {
+    return (
+      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-teal-500/20 text-teal-300 border border-teal-500/40">
+        #2 Alternative
+      </span>
+    );
+  }
+  if (rank === 3) {
+    return (
+      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+        #3 Alternative
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-800 text-slate-400 border border-slate-700">
+      #{rank} Option
+    </span>
+  );
+}
+
 function CareRequestDetailContent({ careRequestId }: { careRequestId: string }) {
   const { user, token, logout } = useAuth();
   const router = useRouter();
@@ -98,6 +132,13 @@ function CareRequestDetailContent({ careRequestId }: { careRequestId: string }) 
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState<number>(0);
+
+  // Recommendations State
+  const [recommendations, setRecommendations] = useState<FacilityRecommendationItem[]>([]);
+  const [recLoading, setRecLoading] = useState<boolean>(true);
+  const [recError, setRecError] = useState<string | null>(null);
+  const [recLimit, setRecLimit] = useState<number>(5);
+  const [recKey, setRecKey] = useState<number>(0);
 
   // Edit Modal State
   const [isEditOpen, setIsEditOpen] = useState<boolean>(false);
@@ -141,6 +182,42 @@ function CareRequestDetailContent({ careRequestId }: { careRequestId: string }) 
       isMounted = false;
     };
   }, [careRequestId, token, reloadKey]);
+
+  // Load Recommendations Effect
+  useEffect(() => {
+    let isMounted = true;
+    async function loadRecommendations() {
+      if (!token || !careRequestId) return;
+      setRecLoading(true);
+      setRecError(null);
+      try {
+        const res = await getRecommendations(careRequestId, recLimit, token);
+        if (isMounted) {
+          setRecommendations(res.recommendations);
+        }
+      } catch (err: unknown) {
+        if (isMounted) {
+          const msg =
+            err instanceof ApiError
+              ? err.message
+              : err instanceof Error
+              ? err.message
+              : "Unable to calculate facility recommendations.";
+          setRecError(msg);
+        }
+      } finally {
+        if (isMounted) {
+          setRecLoading(false);
+        }
+      }
+    }
+
+    loadRecommendations();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [careRequestId, token, recLimit, recKey, reloadKey]);
 
   const handleLogout = async () => {
     await logout();
@@ -556,14 +633,382 @@ function CareRequestDetailContent({ careRequestId }: { careRequestId: string }) 
               </div>
             </div>
 
-            {/* Phase 6+ Recommendation Engine Placeholder */}
-            <div className="bg-slate-900/30 border border-dashed border-slate-800 rounded-xl p-8 text-center">
-              <div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">
-                Facility Match & Referral Dispatch
+            {/* Phase 7: Smart Facility Recommendation Engine */}
+            <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+              {/* Header */}
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-slate-800">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h2 className="text-base font-bold text-white flex items-center gap-2">
+                        Smart Facility Recommendations
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-normal">
+                          Multi-Factor Scored
+                        </span>
+                      </h2>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Deterministic matching based on clinical domain, travel proximity, diagnostics, specialist availability, and bed workload.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Controls: Limit selector & Refresh */}
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-1 text-xs text-slate-300">
+                    <span className="px-2 text-slate-500 font-medium">Show:</span>
+                    {[3, 5, 10].map((lim) => (
+                      <button
+                        key={lim}
+                        onClick={() => setRecLimit(lim)}
+                        className={`px-2.5 py-1 rounded font-semibold transition ${
+                          recLimit === lim
+                            ? "bg-emerald-600 text-white shadow-sm"
+                            : "text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        Top {lim}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => setRecKey((k) => k + 1)}
+                    disabled={recLoading}
+                    className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition disabled:opacity-50"
+                    title="Recalculate Recommendations"
+                  >
+                    <svg
+                      className={`w-4 h-4 ${recLoading ? "animate-spin text-emerald-400" : ""}`}
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                      />
+                    </svg>
+                  </button>
+                </div>
               </div>
-              <p className="text-xs text-slate-500 italic max-w-md mx-auto">
-                Facility recommendations will be available in a later phase.
-              </p>
+
+              {/* Scoring Weights Criteria Strip */}
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400 bg-slate-950/60 p-3 rounded-xl border border-slate-800/80">
+                <span className="font-semibold text-slate-300 mr-1 flex items-center gap-1">
+                  <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Scoring Weights:
+                </span>
+                <span className="bg-slate-900 px-2 py-0.5 rounded border border-slate-800 text-slate-300">
+                  Service Match <strong className="text-emerald-400">30%</strong>
+                </span>
+                <span className="bg-slate-900 px-2 py-0.5 rounded border border-slate-800 text-slate-300">
+                  Distance Proximity <strong className="text-teal-400">20%</strong>
+                </span>
+                <span className="bg-slate-900 px-2 py-0.5 rounded border border-slate-800 text-slate-300">
+                  Diagnostics <strong className="text-cyan-400">20%</strong>
+                </span>
+                <span className="bg-slate-900 px-2 py-0.5 rounded border border-slate-800 text-slate-300">
+                  Specialist <strong className="text-indigo-400">15%</strong>
+                </span>
+                <span className="bg-slate-900 px-2 py-0.5 rounded border border-slate-800 text-slate-300">
+                  Availability <strong className="text-amber-400">10%</strong>
+                </span>
+                <span className="bg-slate-900 px-2 py-0.5 rounded border border-slate-800 text-slate-300">
+                  Workload <strong className="text-purple-400">5%</strong>
+                </span>
+              </div>
+
+              {/* Loading State */}
+              {recLoading && (
+                <div className="space-y-4">
+                  {[1, 2, 3].map((i) => (
+                    <div
+                      key={i}
+                      className="animate-pulse bg-slate-950/80 border border-slate-800 rounded-xl p-5 space-y-3"
+                    >
+                      <div className="flex justify-between items-center">
+                        <div className="h-5 bg-slate-800 rounded w-1/3"></div>
+                        <div className="h-8 bg-slate-800 rounded w-20"></div>
+                      </div>
+                      <div className="h-4 bg-slate-800/60 rounded w-1/2"></div>
+                      <div className="h-10 bg-slate-900 rounded"></div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Error State */}
+              {!recLoading && recError && (
+                <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-400 flex items-center justify-between">
+                  <div>
+                    <strong className="font-semibold">Recommendation Error:</strong> {recError}
+                  </div>
+                  <button
+                    onClick={() => setRecKey((k) => k + 1)}
+                    className="px-3 py-1 bg-rose-600/30 hover:bg-rose-600/50 text-white rounded-md transition font-medium"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+
+              {/* Empty State */}
+              {!recLoading && !recError && recommendations.length === 0 && (
+                <div className="text-center py-12 px-4 border border-dashed border-slate-800 rounded-xl bg-slate-950/30">
+                  <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center mx-auto mb-3 text-slate-500">
+                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                    </svg>
+                  </div>
+                  <h3 className="text-sm font-semibold text-slate-300">No Matching Facilities Found</h3>
+                  <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                    No active facilities in the system currently provide the required clinical capabilities for this category ({careRequest.care_category || "General"}).
+                  </p>
+                </div>
+              )}
+
+              {/* Recommendations List */}
+              {!recLoading && !recError && recommendations.length > 0 && (
+                <div className="space-y-4">
+                  {recommendations.map((rec, index) => {
+                    const rank = index + 1;
+                    const scorePct = Math.round(rec.overall_score);
+                    return (
+                      <div
+                        key={rec.facility_id}
+                        className="bg-slate-950/70 border border-slate-800/90 hover:border-emerald-500/40 rounded-xl p-5 transition group hover:shadow-lg hover:shadow-emerald-950/20"
+                      >
+                        {/* Card Top: Rank, Facility Name, Score Gauge */}
+                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                          <div className="space-y-1.5 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <RecommendationRankBadge rank={rank} />
+                              <span className="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                                {rec.facility_type.replace(/_/g, " ")} • Tier {rec.tier_level}
+                              </span>
+                              {rec.specialist_available && (
+                                <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/30">
+                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                  </svg>
+                                  Specialist Available
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex items-baseline gap-2">
+                              <Link
+                                href={`/facilities/${rec.facility_id}`}
+                                className="text-base font-bold text-white group-hover:text-emerald-400 transition"
+                              >
+                                {rec.facility_name}
+                              </Link>
+                              {rec.facility_code && (
+                                <span className="text-xs font-mono text-slate-500">
+                                  ({rec.facility_code})
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
+                              <span className="flex items-center gap-1">
+                                <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                                {rec.district}, {rec.state}
+                              </span>
+
+                              {rec.distance_km != null ? (
+                                <span className="flex items-center gap-1 text-teal-400 font-medium">
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                                  </svg>
+                                  {rec.distance_km.toFixed(1)} km away
+                                </span>
+                              ) : (
+                                <span className="text-slate-500 italic">Distance N/A</span>
+                              )}
+
+                              <span className="text-slate-500">
+                                Bed Load: {rec.current_load}/{rec.capacity} (
+                                {Math.round((rec.current_load / (rec.capacity || 1)) * 100)}%)
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Overall Score Badge */}
+                          <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-1 p-3 rounded-xl bg-slate-900 border border-slate-800 shrink-0">
+                            <div className="text-[11px] uppercase tracking-wider text-slate-400 font-medium">
+                              Match Score
+                            </div>
+                            <div className="flex items-baseline gap-1">
+                              <span
+                                className={`text-2xl font-black ${
+                                  scorePct >= 80
+                                    ? "text-emerald-400"
+                                    : scorePct >= 60
+                                    ? "text-teal-400"
+                                    : scorePct >= 40
+                                    ? "text-amber-400"
+                                    : "text-slate-400"
+                                }`}
+                              >
+                                {scorePct}%
+                              </span>
+                              <span className="text-xs text-slate-500">/ 100</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Deterministic Explanation Callout */}
+                        <div className="mt-4 p-3 rounded-lg bg-emerald-950/20 border border-emerald-500/20 text-xs text-emerald-300 leading-relaxed flex items-start gap-2.5">
+                          <svg className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <div>
+                            <span className="font-semibold text-emerald-200">Matching Justification: </span>
+                            {rec.explanation}
+                          </div>
+                        </div>
+
+                        {/* Matched Capabilities & Diagnostics Chips */}
+                        <div className="mt-3.5 flex flex-wrap gap-2 text-xs">
+                          {rec.matched_services.map((svc, sIdx) => (
+                            <span
+                              key={sIdx}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-900 text-slate-300 border border-slate-800 text-[11px]"
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                              {svc}
+                            </span>
+                          ))}
+                          {rec.diagnostics_available && rec.diagnostics_available.length > 0 && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-cyan-950/30 text-cyan-300 border border-cyan-500/20 text-[11px]">
+                              🔬 {rec.diagnostics_available.join(", ")}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Multi-Factor Breakdown Bars */}
+                        <div className="mt-4 pt-3.5 border-t border-slate-900 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-[11px]">
+                          <div>
+                            <div className="flex justify-between text-slate-400 mb-1">
+                              <span>Service (30%)</span>
+                              <span className="text-slate-200 font-mono">
+                                {Math.round(rec.factors.service_match)}%
+                              </span>
+                            </div>
+                            <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className="bg-emerald-500 h-full rounded-full transition-all"
+                                style={{ width: `${Math.min(100, Math.max(0, rec.factors.service_match))}%` }}
+                              ></div>
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="flex justify-between text-slate-400 mb-1">
+                              <span>Distance (20%)</span>
+                              <span className="text-slate-200 font-mono">
+                                {Math.round(rec.factors.distance)}%
+                              </span>
+                            </div>
+                            <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className="bg-teal-500 h-full rounded-full transition-all"
+                                style={{ width: `${Math.min(100, Math.max(0, rec.factors.distance))}%` }}
+                              ></div>
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="flex justify-between text-slate-400 mb-1">
+                              <span>Diagnostics (20%)</span>
+                              <span className="text-slate-200 font-mono">
+                                {Math.round(rec.factors.diagnostic_match)}%
+                              </span>
+                            </div>
+                            <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className="bg-cyan-500 h-full rounded-full transition-all"
+                                style={{ width: `${Math.min(100, Math.max(0, rec.factors.diagnostic_match))}%` }}
+                              ></div>
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="flex justify-between text-slate-400 mb-1">
+                              <span>Specialist (15%)</span>
+                              <span className="text-slate-200 font-mono">
+                                {Math.round(rec.factors.specialist_match)}%
+                              </span>
+                            </div>
+                            <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className="bg-indigo-500 h-full rounded-full transition-all"
+                                style={{ width: `${Math.min(100, Math.max(0, rec.factors.specialist_match))}%` }}
+                              ></div>
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="flex justify-between text-slate-400 mb-1">
+                              <span>Availability (10%)</span>
+                              <span className="text-slate-200 font-mono">
+                                {Math.round(rec.factors.availability)}%
+                              </span>
+                            </div>
+                            <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className="bg-amber-500 h-full rounded-full transition-all"
+                                style={{ width: `${Math.min(100, Math.max(0, rec.factors.availability))}%` }}
+                              ></div>
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="flex justify-between text-slate-400 mb-1">
+                              <span>Workload (5%)</span>
+                              <span className="text-slate-200 font-mono">
+                                {Math.round(rec.factors.workload)}%
+                              </span>
+                            </div>
+                            <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className="bg-purple-500 h-full rounded-full transition-all"
+                                style={{ width: `${Math.min(100, Math.max(0, rec.factors.workload))}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Card Footer Action */}
+                        <div className="mt-4 pt-3 border-t border-slate-900 flex justify-end">
+                          <Link
+                            href={`/facilities/${rec.facility_id}`}
+                            className="inline-flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 font-medium transition"
+                          >
+                            <span>View Full Facility Details & Capabilities</span>
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                          </Link>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}
