@@ -4,6 +4,7 @@ import React, { useState, useEffect, useTransition } from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { SyncStatusBadge } from "@/components/SyncStatusBadge";
 import {
   getFacilities,
   getNearbyFacilities,
@@ -16,6 +17,8 @@ import {
   NearbyFacilityItem,
 } from "@/types/facility";
 import { ApiError } from "@/lib/api";
+import { offlineDb } from "@/lib/offline/db";
+import { cacheFacilitiesLocally } from "@/lib/offline/syncEngine";
 
 const ALLOWED_MANAGE_ROLES = ["ADMIN", "DISTRICT_ADMIN", "FACILITY_ADMIN"];
 
@@ -93,6 +96,7 @@ function FacilitiesContent() {
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isCachedView, setIsCachedView] = useState(false);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState("");
@@ -148,6 +152,7 @@ function FacilitiesContent() {
 
     async function loadFacilities() {
       try {
+        setIsCachedView(false);
         const activeParam =
           activeFilters.active === "true"
             ? true
@@ -171,9 +176,33 @@ function FacilitiesContent() {
           setPage(res.page);
           setTotalPages(res.total_pages);
           setError(null);
+          await cacheFacilitiesLocally(res.items);
         }
       } catch (err: unknown) {
-        if (isMounted) {
+        const localList = await offlineDb.facilities.toArray();
+        if (localList.length > 0 && isMounted) {
+          setIsCachedView(true);
+          let filtered = localList;
+          if (activeFilters.type) {
+            filtered = filtered.filter((f) => f.facility_type === activeFilters.type);
+          }
+          if (activeFilters.district) {
+            filtered = filtered.filter((f) => f.district.toLowerCase() === activeFilters.district.toLowerCase());
+          }
+          if (activeFilters.search) {
+            const q = activeFilters.search.toLowerCase();
+            filtered = filtered.filter(
+              (f) =>
+                f.name.toLowerCase().includes(q) ||
+                (f.code ? f.code.toLowerCase().includes(q) : false)
+            );
+          }
+          setFacilities(filtered);
+          setTotal(filtered.length);
+          setPage(1);
+          setTotalPages(Math.max(1, Math.ceil(filtered.length / 9)));
+          setError(null);
+        } else if (isMounted) {
           if (err instanceof ApiError) {
             setError(err.message);
           } else {
@@ -293,6 +322,7 @@ function FacilitiesContent() {
           </div>
 
           <div className="flex items-center gap-3">
+            <SyncStatusBadge />
             <Link
               href="/dashboard"
               className="px-3 py-1.5 text-xs font-medium text-slate-400 hover:text-white border border-slate-800 rounded-lg hover:bg-slate-800/60 transition"
@@ -313,6 +343,21 @@ function FacilitiesContent() {
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Offline Cache Mode Banner */}
+        {isCachedView && (
+          <div className="mb-6 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-between animate-fadeIn">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <span className="text-base">⚠️</span>
+              <span>
+                Operating in <strong>Offline Mode</strong>. Displaying locally cached facility directory and capability profiles.
+              </span>
+            </div>
+            <span className="font-mono text-xs bg-amber-500/20 px-2.5 py-1 rounded-md border border-amber-500/30">
+              Cached View
+            </span>
+          </div>
+        )}
+
         {/* Module Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
           <div>

@@ -1,10 +1,11 @@
 """Care Request Management API endpoints."""
 import uuid
 from typing import Optional
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, Header, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_current_user, require_roles
+from app.core.idempotency import idempotency_cache
 from app.models.user import User
 from app.schemas.care_request import (
     CareRequestCreate,
@@ -39,17 +40,27 @@ CARE_REQUEST_ROLES = [
 def create_care_request(
     request_in: CareRequestCreate,
     request: Request,
+    x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key"),
     db: Session = Depends(get_db),
     current_user: User = require_roles(*CARE_REQUEST_ROLES),
 ) -> CareRequestResponse:
-    """Create a care request bound to the authenticated user and specified patient."""
+    """Create a care request bound to the authenticated user and specified patient with idempotency support."""
+    if x_idempotency_key:
+        cached_res = idempotency_cache.get(x_idempotency_key)
+        if cached_res:
+            return cached_res
+
     client_ip = request.client.host if request.client else None
-    return CareRequestService.create_care_request(
+    response_data = CareRequestService.create_care_request(
         db=db,
         request_in=request_in,
         current_user=current_user,
         client_ip=client_ip,
     )
+    if x_idempotency_key:
+        idempotency_cache.set(x_idempotency_key, response_data)
+    return response_data
+
 
 
 @router.get(

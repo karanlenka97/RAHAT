@@ -4,16 +4,22 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { useOffline } from "@/context/OfflineContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { SyncStatusBadge } from "@/components/SyncStatusBadge";
 import { getCareRequests, createCareRequest } from "@/lib/careRequestApi";
 import { getPatients } from "@/lib/patientApi";
 import {
-  CareRequest,
   CareCategory,
   CareRequestCreateInput,
 } from "@/types/careRequest";
-import { Patient } from "@/types/patient";
 import { ApiError } from "@/lib/api";
+import { offlineDb, OfflineCareRequest, OfflinePatient } from "@/lib/offline/db";
+import {
+  queueOfflineCareRequest,
+  cacheCareRequestsLocally,
+  cachePatientsLocally,
+} from "@/lib/offline/syncEngine";
 
 const ALLOWED_CREATION_ROLES = [
   "ADMIN",
@@ -107,9 +113,10 @@ function UrgencyBadge({ urgency }: { urgency: string }) {
 
 function CareRequestsContent() {
   const { user, token, logout } = useAuth();
+  const { isOnline, refreshPendingCount } = useOffline();
   const router = useRouter();
 
-  const [careRequests, setCareRequests] = useState<CareRequest[]>([]);
+  const [careRequests, setCareRequests] = useState<OfflineCareRequest[]>([]);
   const [total, setTotal] = useState<number>(0);
   const [page, setPage] = useState<number>(1);
   const [totalPages, setTotalPages] = useState<number>(1);
@@ -124,10 +131,11 @@ function CareRequestsContent() {
   });
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [isCachedView, setIsCachedView] = useState<boolean>(false);
   const [reloadKey, setReloadKey] = useState<number>(0);
 
   // Available Patients for Modal
-  const [patients, setPatients] = useState<Patient[]>([]);
+  const [patients, setPatients] = useState<OfflinePatient[]>([]);
 
   // Create Modal State
   const [isCreateOpen, setIsCreateOpen] = useState<boolean>(false);
@@ -147,15 +155,23 @@ function CareRequestsContent() {
   };
   const [formData, setFormData] = useState<CareRequestCreateInput>(initialFormData);
 
-  // Fetch Patients for Modal Dropdown
+  // Fetch Patients for Modal Dropdown (online or local cache)
   useEffect(() => {
     let isMounted = true;
     if (!token) return;
-    getPatients({ page: 1, page_size: 50 }, token)
-      .then((data) => {
-        if (isMounted) setPatients(data.items);
+    getPatients({ page: 1, page_size: 100 }, token)
+      .then(async (data) => {
+        if (isMounted) {
+          setPatients(data.items);
+          await cachePatientsLocally(data.items);
+        }
       })
-      .catch((err) => console.error("Failed to fetch patients list for modal:", err));
+      .catch(async () => {
+        const localPatients = await offlineDb.patients.toArray();
+        if (isMounted && localPatients.length > 0) {
+          setPatients(localPatients);
+        }
+      });
 
     return () => {
       isMounted = false;
@@ -169,6 +185,7 @@ function CareRequestsContent() {
       if (!token) return;
       setIsLoading(true);
       setError(null);
+      setIsCachedView(false);
       try {
         const data = await getCareRequests(
           {
@@ -184,9 +201,35 @@ function CareRequestsContent() {
           setCareRequests(data.items);
           setTotal(data.total);
           setTotalPages(data.total_pages);
+          await cacheCareRequestsLocally(data.items);
         }
       } catch (err: unknown) {
-        if (isMounted) {
+        // Fallback to local Dexie IndexedDB cache
+        const localList = await offlineDb.careRequests.toArray();
+        if (localList.length > 0 && isMounted) {
+          setIsCachedView(true);
+          let filtered = localList;
+          if (activeFilters.urgency) {
+            filtered = filtered.filter((r) => r.urgency === activeFilters.urgency);
+          }
+          if (activeFilters.category) {
+            filtered = filtered.filter((r) => r.care_category === activeFilters.category);
+          }
+          if (activeFilters.search) {
+            const q = activeFilters.search.toLowerCase();
+            filtered = filtered.filter(
+              (r) =>
+                r.request_number?.toLowerCase().includes(q) ||
+                r.required_service.toLowerCase().includes(q) ||
+                r.symptoms_summary.toLowerCase().includes(q) ||
+                r.patient?.full_name?.toLowerCase().includes(q) ||
+                r.patient?.patient_code?.toLowerCase().includes(q)
+            );
+          }
+          setCareRequests(filtered);
+          setTotal(filtered.length);
+          setTotalPages(Math.max(1, Math.ceil(filtered.length / pageSize)));
+        } else if (isMounted) {
           const msg =
             err instanceof ApiError
               ? err.message
@@ -274,19 +317,37 @@ function CareRequestsContent() {
     setIsSubmitting(true);
     setModalError(null);
 
-    try {
-      const payload: CareRequestCreateInput = {
-        patient_id: formData.patient_id,
-        care_category: formData.care_category,
-        required_service: formData.required_service.trim(),
-        urgency: formData.urgency,
-        symptoms_summary: formData.symptoms_summary.trim(),
-        diagnostic_requirements: formData.diagnostic_requirements || [],
-        specialist_required: formData.specialist_required || false,
-        notes: formData.notes?.trim() || undefined,
-      };
+    const payload: CareRequestCreateInput = {
+      patient_id: formData.patient_id,
+      care_category: formData.care_category,
+      required_service: formData.required_service.trim(),
+      urgency: formData.urgency,
+      symptoms_summary: formData.symptoms_summary.trim(),
+      diagnostic_requirements: formData.diagnostic_requirements || [],
+      specialist_required: formData.specialist_required || false,
+      notes: formData.notes?.trim() || undefined,
+    };
 
+    if (!isOnline) {
+      try {
+        const offlineReq = await queueOfflineCareRequest(payload);
+        await refreshPendingCount();
+        setIsCreateOpen(false);
+        setFormData(initialFormData);
+        setCareRequests((prev) => [offlineReq, ...prev]);
+        setSuccessBanner(`Care request queued offline (${offlineReq.request_number}). It will automatically synchronize when connectivity is restored.`);
+        setTimeout(() => setSuccessBanner(null), 8000);
+      } catch (err: unknown) {
+        setModalError(err instanceof Error ? err.message : "Failed to save care request locally.");
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
+    try {
       const created = await createCareRequest(payload, token);
+      await cacheCareRequestsLocally([created]);
       setIsCreateOpen(false);
       setFormData(initialFormData);
       setSuccessBanner(`Care request created successfully! Request Number: ${created.request_number}`);
@@ -294,13 +355,24 @@ function CareRequestsContent() {
       setPage(1);
       setReloadKey((k) => k + 1);
     } catch (err: unknown) {
-      const msg =
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-          ? err.message
-          : "Unable to create care request. Please verify entered data.";
-      setModalError(msg);
+      // Offline fallback if network interrupted during request
+      try {
+        const offlineReq = await queueOfflineCareRequest(payload);
+        await refreshPendingCount();
+        setIsCreateOpen(false);
+        setFormData(initialFormData);
+        setCareRequests((prev) => [offlineReq, ...prev]);
+        setSuccessBanner(`Network interrupted. Care request queued offline (${offlineReq.request_number}) for background sync.`);
+        setTimeout(() => setSuccessBanner(null), 8000);
+      } catch {
+        const msg =
+          err instanceof ApiError
+            ? err.message
+            : err instanceof Error
+            ? err.message
+            : "Unable to create care request. Please verify entered data.";
+        setModalError(msg);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -326,6 +398,7 @@ function CareRequestsContent() {
           </div>
 
           <div className="flex items-center gap-4">
+            <SyncStatusBadge />
             <Link
               href="/dashboard"
               className="text-xs font-medium text-slate-300 hover:text-emerald-400 transition"
@@ -354,6 +427,21 @@ function CareRequestsContent() {
 
       {/* Main Content */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Offline Cache Mode Banner */}
+        {isCachedView && (
+          <div className="mb-6 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-between animate-fadeIn">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <span className="text-base">⚠️</span>
+              <span>
+                Operating in <strong>Offline Mode</strong>. Displaying locally cached care requests. New intakes will queue automatically for synchronization upon reconnect.
+              </span>
+            </div>
+            <span className="font-mono text-xs bg-amber-500/20 px-2.5 py-1 rounded-md border border-amber-500/30">
+              Dexie Cache Active
+            </span>
+          </div>
+        )}
+
         {/* Success Banner */}
         {successBanner && (
           <div className="mb-6 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-between animate-fadeIn">
@@ -521,8 +609,18 @@ function CareRequestsContent() {
                 <tbody className="divide-y divide-slate-800/60">
                   {careRequests.map((req) => (
                     <tr key={req.id} className="hover:bg-slate-800/30 transition">
-                      <td className="px-6 py-4 whitespace-nowrap font-mono text-xs font-bold text-emerald-400">
-                        {req.request_number}
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs font-bold text-emerald-400">
+                            {req.request_number}
+                          </span>
+                          {req.pending_sync && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                              <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                              Pending Sync
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         {req.patient ? (

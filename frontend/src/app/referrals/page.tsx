@@ -5,9 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { SyncStatusBadge } from "@/components/SyncStatusBadge";
 import { getReferrals } from "@/lib/referralApi";
 import { Referral, ReferralStatus } from "@/types/referral";
 import { ApiError } from "@/lib/api";
+import { offlineDb } from "@/lib/offline/db";
+import { cacheReferralsLocally } from "@/lib/offline/syncEngine";
 
 const STATUS_FILTERS: { value: string; label: string }[] = [
   { value: "", label: "All Statuses" },
@@ -145,6 +148,7 @@ function ReferralListContent() {
   const [totalPages, setTotalPages] = useState<number>(1);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [isCachedView, setIsCachedView] = useState<boolean>(false);
 
   // Filters
   const [search, setSearch] = useState<string>("");
@@ -158,6 +162,7 @@ function ReferralListContent() {
       if (!token) return;
       setIsLoading(true);
       setError(null);
+      setIsCachedView(false);
 
       try {
         const data = await getReferrals(
@@ -175,9 +180,33 @@ function ReferralListContent() {
           setReferrals(data.items);
           setTotal(data.total);
           setTotalPages(data.total_pages);
+          await cacheReferralsLocally(data.items);
         }
       } catch (err: unknown) {
-        if (isMounted) {
+        const localList = await offlineDb.referrals.toArray();
+        if (localList.length > 0 && isMounted) {
+          setIsCachedView(true);
+          let filtered = localList;
+          if (statusFilter) {
+            filtered = filtered.filter((r) => r.status === statusFilter);
+          }
+          if (urgencyFilter) {
+            filtered = filtered.filter((r) => r.urgency === urgencyFilter);
+          }
+          if (search.trim()) {
+            const q = search.trim().toLowerCase();
+            filtered = filtered.filter(
+              (r) =>
+                r.referral_code?.toLowerCase().includes(q) ||
+                r.patient_name?.toLowerCase().includes(q) ||
+                r.patient_code?.toLowerCase().includes(q)
+            );
+          }
+          setReferrals(filtered);
+          setTotal(filtered.length);
+          setTotalPages(Math.max(1, Math.ceil(filtered.length / 15)));
+          setError(null);
+        } else if (isMounted) {
           const msg =
             err instanceof ApiError
               ? err.message
@@ -255,6 +284,7 @@ function ReferralListContent() {
           </div>
 
           <div className="flex items-center gap-4">
+            <SyncStatusBadge />
             <div className="hidden sm:block text-right">
               <div className="text-xs font-semibold text-white">
                 {user?.full_name}
@@ -276,6 +306,21 @@ function ReferralListContent() {
 
       {/* Main Content */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Offline Cache Mode Banner */}
+        {isCachedView && (
+          <div className="mb-6 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-between animate-fadeIn">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <span className="text-base">⚠️</span>
+              <span>
+                Operating in <strong>Offline Mode</strong>. Displaying locally cached referral records. Referral state updates require active network connectivity.
+              </span>
+            </div>
+            <span className="font-mono text-xs bg-amber-500/20 px-2.5 py-1 rounded-md border border-amber-500/30">
+              Cached View
+            </span>
+          </div>
+        )}
+
         {/* Page Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div>

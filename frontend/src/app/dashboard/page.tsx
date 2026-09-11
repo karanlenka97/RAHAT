@@ -18,6 +18,10 @@ import {
   ReferralFunnelData,
 } from "@/types/dashboard";
 
+import { SyncStatusBadge } from "@/components/SyncStatusBadge";
+import { offlineDb } from "@/lib/offline/db";
+import { cacheDashboardLocally } from "@/lib/offline/syncEngine";
+
 type DashboardTab = "frontline" | "facility" | "district";
 
 function DashboardContent() {
@@ -38,6 +42,8 @@ function DashboardContent() {
 
   const [timeRange, setTimeRange] = useState<string>("all");
   const [reloadKey, setReloadKey] = useState<number>(0);
+  const [isCachedData, setIsCachedData] = useState<boolean>(false);
+  const [cachedSyncedAt, setCachedSyncedAt] = useState<string | null>(null);
 
   // State for data
   const [frontlineData, setFrontlineData] = useState<FrontlineDashboardData | null>(null);
@@ -62,14 +68,21 @@ function DashboardContent() {
       if (!token) return;
       setIsLoading(true);
       setErrorMessage(null);
+      setIsCachedData(false);
 
       try {
         if (activeTab === "frontline") {
           const data = await getFrontlineDashboard(token);
-          if (isMounted) setFrontlineData(data);
+          if (isMounted) {
+            setFrontlineData(data);
+            await cacheDashboardLocally("frontline", data);
+          }
         } else if (activeTab === "facility") {
           const data = await getFacilityDashboard(token, userFacilityId || null);
-          if (isMounted) setFacilityData(data);
+          if (isMounted) {
+            setFacilityData(data);
+            await cacheDashboardLocally("facility", data);
+          }
         } else if (activeTab === "district") {
           const [dData, fData] = await Promise.all([
             getDistrictDashboard(token, null, timeRange),
@@ -78,10 +91,25 @@ function DashboardContent() {
           if (isMounted) {
             setDistrictData(dData);
             setFunnelData(fData);
+            await cacheDashboardLocally("district", { dData, fData });
           }
         }
       } catch (err: unknown) {
-        if (isMounted) {
+        // Fallback to offline cached dashboard data
+        const cached = await offlineDb.cachedDashboards.get(activeTab);
+        if (cached && isMounted) {
+          setIsCachedData(true);
+          setCachedSyncedAt(new Date(cached.synced_at).toLocaleTimeString());
+          if (activeTab === "frontline") {
+            setFrontlineData(cached.data as FrontlineDashboardData);
+          } else if (activeTab === "facility") {
+            setFacilityData(cached.data as FacilityDashboardData);
+          } else if (activeTab === "district") {
+            const casted = cached.data as { dData: DistrictDashboardData; fData: ReferralFunnelData };
+            setDistrictData(casted.dData);
+            setFunnelData(casted.fData);
+          }
+        } else if (isMounted) {
           const msg = err instanceof Error ? err.message : "Failed to load dashboard operational metrics.";
           setErrorMessage(msg);
         }
@@ -132,6 +160,7 @@ function DashboardContent() {
           </div>
 
           <div className="flex items-center gap-4">
+            <SyncStatusBadge />
             <div className="hidden sm:flex flex-col text-right">
               <span className="text-xs font-semibold text-white">{user?.full_name}</span>
               <span className="text-[11px] font-mono text-emerald-400">{user?.role}</span>
@@ -148,6 +177,21 @@ function DashboardContent() {
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Offline Cached Banner */}
+        {isCachedData && (
+          <div className="p-3 mb-6 rounded-xl bg-amber-950/40 border border-amber-500/40 text-amber-200 flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2">
+              <span>⚠️</span>
+              <span>
+                <strong>Offline Mode Active:</strong> Displaying cached operational data from {cachedSyncedAt || "previous session"}. Server metrics will refresh upon reconnection.
+              </span>
+            </div>
+            <span className="px-2 py-0.5 rounded font-mono text-[10px] bg-amber-500/20 border border-amber-500/30 text-amber-300">
+              Cached View
+            </span>
+          </div>
+        )}
+
         {/* Welcome & Role Context Header */}
         <div className="p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-900 to-emerald-950/30 border border-slate-800 mb-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">

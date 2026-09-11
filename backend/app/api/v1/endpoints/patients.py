@@ -1,10 +1,11 @@
 """Patient Management API endpoints."""
 import uuid
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Header, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_current_user, require_roles
+from app.core.idempotency import idempotency_cache
 from app.models.user import User
 from app.schemas.patient import (
     PatientCreate,
@@ -44,18 +45,29 @@ PATIENT_MANAGEMENT_ROLES = [
 )
 def register_patient(
     patient_in: PatientCreate,
+    x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key"),
     db: Session = Depends(get_db),
     current_user: User = require_roles(*PATIENT_MANAGEMENT_ROLES),
 ) -> PatientResponse:
-    """Create a new patient record."""
+    """Create a new patient record with idempotency replay protection."""
+    # Check if request with identical idempotency key was already completed
+    if x_idempotency_key:
+        cached_res = idempotency_cache.get(x_idempotency_key)
+        if cached_res:
+            return cached_res
+
     try:
         new_patient = create_patient(db, patient_in, current_user)
-        return format_patient_response(new_patient)
+        response_data = format_patient_response(new_patient)
+        if x_idempotency_key:
+            idempotency_cache.set(x_idempotency_key, response_data)
+        return response_data
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+
 
 
 @router.get(

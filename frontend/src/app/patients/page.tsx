@@ -4,19 +4,24 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { useOffline } from "@/context/OfflineContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { SyncStatusBadge } from "@/components/SyncStatusBadge";
 import { getPatients, createPatient, getVillages } from "@/lib/patientApi";
-import { Patient, Village, PatientCreateInput } from "@/types/patient";
+import { Village, PatientCreateInput } from "@/types/patient";
 import { ApiError } from "@/lib/api";
+import { offlineDb, OfflinePatient } from "@/lib/offline/db";
+import { queueOfflinePatient, cachePatientsLocally } from "@/lib/offline/syncEngine";
 
 const ALLOWED_REGISTRATION_ROLES = ["ADMIN", "DISTRICT_ADMIN", "FACILITY_ADMIN", "DOCTOR", "MEDICAL_OFFICER", "CHO", "ANM", "ASHA"];
 
 function PatientsDirectoryContent() {
   const { user, token, logout } = useAuth();
+  const { isOnline, refreshPendingCount } = useOffline();
   const router = useRouter();
 
   // Patients state
-  const [patients, setPatients] = useState<Patient[]>([]);
+  const [patients, setPatients] = useState<OfflinePatient[]>([]);
   const [total, setTotal] = useState<number>(0);
   const [page, setPage] = useState<number>(1);
   const [totalPages, setTotalPages] = useState<number>(1);
@@ -25,6 +30,7 @@ function PatientsDirectoryContent() {
   const [activeSearch, setActiveSearch] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [isCachedView, setIsCachedView] = useState<boolean>(false);
 
   // Villages for dropdown
   const [villages, setVillages] = useState<Village[]>([]);
@@ -67,6 +73,8 @@ function PatientsDirectoryContent() {
       if (!token) return;
       setIsLoading(true);
       setError(null);
+      setIsCachedView(false);
+
       try {
         const data = await getPatients(
           { page, page_size: pageSize, search: activeSearch },
@@ -76,9 +84,17 @@ function PatientsDirectoryContent() {
           setPatients(data.items);
           setTotal(data.total);
           setTotalPages(data.total_pages);
+          await cachePatientsLocally(data.items);
         }
       } catch (err: unknown) {
-        if (isMounted) {
+        // Fallback to local Dexie IndexedDB cache
+        const localList = await offlineDb.patients.toArray();
+        if (localList.length > 0 && isMounted) {
+          setIsCachedView(true);
+          setPatients(localList);
+          setTotal(localList.length);
+          setTotalPages(Math.ceil(localList.length / pageSize));
+        } else if (isMounted) {
           const msg =
             err instanceof ApiError
               ? err.message
@@ -140,21 +156,40 @@ function PatientsDirectoryContent() {
     setIsSubmitting(true);
     setModalError(null);
 
-    try {
-      const payload: PatientCreateInput = {
-        full_name: formData.full_name.trim(),
-        gender: formData.gender,
-        age: formData.age || undefined,
-        phone: formData.phone?.trim() || undefined,
-        village_id: formData.village_id ? formData.village_id : undefined,
-        address: formData.address?.trim() || undefined,
-        emergency_contact_name: formData.emergency_contact_name?.trim() || undefined,
-        emergency_contact_phone: formData.emergency_contact_phone?.trim() || undefined,
-        abha_reference: formData.abha_reference?.trim() || undefined,
-        blood_group: formData.blood_group || undefined,
-      };
+    const payload: PatientCreateInput = {
+      full_name: formData.full_name.trim(),
+      gender: formData.gender,
+      age: formData.age || undefined,
+      phone: formData.phone?.trim() || undefined,
+      village_id: formData.village_id ? formData.village_id : undefined,
+      address: formData.address?.trim() || undefined,
+      emergency_contact_name: formData.emergency_contact_name?.trim() || undefined,
+      emergency_contact_phone: formData.emergency_contact_phone?.trim() || undefined,
+      abha_reference: formData.abha_reference?.trim() || undefined,
+      blood_group: formData.blood_group || undefined,
+    };
 
+    // If offline, queue mutation locally
+    if (!isOnline) {
+      try {
+        const offlinePatient = await queueOfflinePatient(payload);
+        await refreshPendingCount();
+        setIsRegisterOpen(false);
+        setFormData(initialFormData);
+        setPatients((prev) => [offlinePatient, ...prev]);
+        setSuccessBanner(`Patient registered offline (Code: ${offlinePatient.patient_code}). Queued for automatic sync.`);
+        setTimeout(() => setSuccessBanner(null), 8000);
+      } catch (err: unknown) {
+        setModalError(err instanceof Error ? err.message : "Failed to store patient locally.");
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
+    try {
       const created = await createPatient(payload, token);
+      await cachePatientsLocally([created]);
       setIsRegisterOpen(false);
       setFormData(initialFormData);
       setSuccessBanner(`Patient registered successfully! Patient Code: ${created.patient_code}`);
@@ -162,13 +197,24 @@ function PatientsDirectoryContent() {
       setPage(1);
       setReloadKey((k) => k + 1);
     } catch (err: unknown) {
-      const msg =
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-          ? err.message
-          : "Unable to register the patient. Please check the entered information.";
-      setModalError(msg);
+      // If network failed during online attempt, offer offline fallback
+      try {
+        const offlinePatient = await queueOfflinePatient(payload);
+        await refreshPendingCount();
+        setIsRegisterOpen(false);
+        setFormData(initialFormData);
+        setPatients((prev) => [offlinePatient, ...prev]);
+        setSuccessBanner(`Network interrupted. Patient saved offline (Code: ${offlinePatient.patient_code}) and queued for sync.`);
+        setTimeout(() => setSuccessBanner(null), 8000);
+      } catch {
+        const msg =
+          err instanceof ApiError
+            ? err.message
+            : err instanceof Error
+            ? err.message
+            : "Unable to register the patient. Please check the entered information.";
+        setModalError(msg);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -194,6 +240,7 @@ function PatientsDirectoryContent() {
           </div>
 
           <div className="flex items-center gap-4">
+            <SyncStatusBadge />
             <Link
               href="/dashboard"
               className="text-xs font-medium text-slate-300 hover:text-emerald-400 transition"
@@ -206,7 +253,7 @@ function PatientsDirectoryContent() {
             </div>
             <button
               onClick={handleLogout}
-              className="px-3.5 py-1.5 text-xs font-medium bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg transition"
+              className="px-3.5 py-1.5 text-xs font-medium bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg transition cursor-pointer"
             >
               Sign Out
             </button>
@@ -214,8 +261,24 @@ function PatientsDirectoryContent() {
         </div>
       </header>
 
+
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Offline Cache Mode Banner */}
+        {isCachedView && (
+          <div className="mb-6 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-between animate-fadeIn">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <span className="text-base">⚠️</span>
+              <span>
+                Operating in <strong>Offline Mode</strong>. Displaying locally cached patient registry. New registrations will queue automatically for synchronization upon reconnect.
+              </span>
+            </div>
+            <span className="font-mono text-xs bg-amber-500/20 px-2.5 py-1 rounded-md border border-amber-500/30">
+              Dexie Cache Active
+            </span>
+          </div>
+        )}
+
         {/* Success Banner */}
         {successBanner && (
           <div className="mb-6 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-between animate-fadeIn">
